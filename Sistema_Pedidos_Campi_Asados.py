@@ -149,7 +149,7 @@ with st.form("formulario_pedido"):
     if canal == "En sitio":
         mesas_ocupadas = sorted(set(p["Mesa"] for p in pedidos_visibles if p["Mesa"] != "-" and p["Estado"] in ["Pendiente", "En preparación"]))
         mesa_ocupada = mesa in mesas_ocupadas
-            st.warning(f"⚠️ Mesas ocupadas: {' - '.join(map(str, mesas_ocupadas))}")
+        st.warning(f"⚠️ Mesas ocupadas: {' - '.join(map(str, mesas_ocupadas))}")
 
     selected_items = []
     cantidades = {}
