@@ -164,7 +164,7 @@ elif menu == "🛠️ Gestionar Productos":
             }
             st.success(f"✅ Producto '{nombre}' agregado")
             st.session_state.form_reset = True
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.session_state.form_reset = False
 
