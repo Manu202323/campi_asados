@@ -1,10 +1,13 @@
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, date
 import pandas as pd
 import io
 
 # Configuración de página
-st.set_page_config(page_title="🍽️ Sistema Restaurante", layout="wide")
+st.set_page_config(page_title="Campi Asados", layout="wide")
+
+# --- Encabezado ---
+st.image("logo_campi_asados.jpg", width=300)
 
 # --- Categorías definidas ---
 categories_list = [
@@ -12,18 +15,7 @@ categories_list = [
     "Perros", "Otros Platos", "Bebidas", "Jugos", "Limonadas"
 ]
 
-# --- Encabezado ---
-st.markdown(
-    """
-    <div style='text-align: center;'>
-        <h1>🍽️ Sistema de Pedidos - Restaurante</h1>
-        <p>Compatible con celular, tablet y PC</p>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-# --- Inicializar estado ---
+# --- Estado de sesión ---
 if "pedidos" not in st.session_state:
     st.session_state.pedidos = []
 if "productos" not in st.session_state:
@@ -49,15 +41,18 @@ opciones_menu = ["📋 Tomar Pedido", "🛠️ Gestionar Productos", "📊 Repor
 menu = st.sidebar.radio("Menú", opciones_menu)
 
 # --- Funciones auxiliares ---
+
 def avanzar_estado(pedido):
     estados = ["Registrado", "En preparación", "Entregado", "Pagado"]
     idx = estados.index(pedido['estado'])
     if idx < len(estados) - 1:
         pedido['estado'] = estados[idx + 1]
 
+
 def mesa_ocupada(mesa):
     return any(p['mesa'] == mesa and p['estado'] in ["Registrado", "En preparación", "Entregado"]
                for p in st.session_state.pedidos)
+
 
 def agregar_pedido(tipo, mesa, productos):
     subtotal = sum(item['subtotal'] for item in productos)
@@ -74,7 +69,7 @@ def agregar_pedido(tipo, mesa, productos):
     }
     st.session_state.pedidos.append(pedido)
 
-# --- Página: Tomar Pedido y Pedidos Activos ---
+# --- Página: Tomar Pedido ---
 if menu == "📋 Tomar Pedido":
     st.subheader("📝 Nuevo Pedido")
     tipo = st.selectbox("Tipo de pedido", ["Mesa", "Para llevar", "Domicilio"])
@@ -115,83 +110,93 @@ if menu == "📋 Tomar Pedido":
 
     # -- Pedidos Activos --
     st.markdown("---")
-    # Registrados
-    with st.expander("📋 Pedidos Registrados", expanded=True):
-        regs = [p for p in st.session_state.pedidos if p['estado'] == "Registrado"]
-        if regs:
-            for p in regs:
-                cols = st.columns([2, 1, 1])
-                cols[0].markdown(f"**#{p['id']}** - {p['tipo']}" + (f" - Mesa {p['mesa']}" if p['tipo']=='Mesa' and p['mesa'] else ''))
-                cols[1].markdown(f"_Subtotal:_ ${p['subtotal']:,.2f}")
-                default_tip = round(p['subtotal'] * 0.1, 2)
-                use_def = cols[2].checkbox(f"Propina 10% (${default_tip:,.2f})", key=f"tipdef_{p['id']}")
-                tip_val = default_tip if use_def else 0.0
-                tip_val = cols[2].number_input("Otro valor", 0.0, value=tip_val, format="%.2f", key=f"tipcus_{p['id']}")
-                if cols[2].button("Aplicar", key=f"apply_{p['id']}"):
-                    p['propina'] = round(tip_val, 2)
-                    p['total'] = round(p['subtotal'] + p['propina'], 2)
-                    st.rerun()
-                st.markdown(f"**Total:** ${p['total']:,.2f}")
-                for pr in p['productos']:
-                    st.markdown(f"- {pr['cantidad']}× {pr['nombre']} ({pr['obs']}) — ${pr['subtotal']:,.2f}")
-                c1, c2 = st.columns([1, 4])
-                with c1:
-                    if st.button(f"▶️ Avanzar #{p['id']}", key=f"adv1_{p['id']}"):
-                        avanzar_estado(p)
-                        st.success(f"Pedido #{p['id']} ahora {p['estado']}")
-                        st.rerun()
-                with c2:
-                    st.markdown(f"🕒 {p['hora']}")
-        else:
-            st.write("No hay pedidos en estado Registrado.")
-    # En preparación
-    with st.expander("🍳 Pedidos En preparación", expanded=True):
-        prep = [p for p in st.session_state.pedidos if p['estado'] == "En preparación"]
-        if prep:
-            for p in prep:
-                cols = st.columns([2, 1])
-                cols[0].markdown(f"**#{p['id']}** - {p['tipo']}" + (f" - Mesa {p['mesa']}" if p['tipo']=='Mesa' and p['mesa'] else ''))
-                cols[1].markdown(f"_Estado:_ {p['estado']}")
-                for pr in p['productos']:
-                    st.markdown(f"- {pr['cantidad']}× {pr['nombre']} ({pr['obs']})")
-                c1, c2 = st.columns([1, 4])
-                with c1:
-                    if st.button(f"✔️ Marcar preparado #{p['id']}", key=f"adv2_{p['id']}"):
-                        avanzar_estado(p)
-                        st.success(f"Pedido #{p['id']} ahora {p['estado']}")
-                        st.rerun()
-                with c2:
-                    st.markdown(f"🕒 {p['hora']}")
-        else:
-            st.write("No hay pedidos en preparación.")
-    # Entregados
-    with st.expander("📦 Pedidos Entregados", expanded=True):
-        ent = [p for p in st.session_state.pedidos if p['estado'] == "Entregado"]
-        if ent:
-            for p in ent:
-                cols = st.columns([2, 1, 1])
-                cols[0].markdown(f"**#{p['id']}** - {p['tipo']}" + (f" - Mesa {p['mesa']}" if p['tipo']=='Mesa' and p['mesa'] else ''))
-                cols[1].markdown(f"_Subtotal:_ ${p['subtotal']:,.2f}")
-                if p['propina'] == 0.0:
-                    default_tip = round(p['subtotal'] * 0.1, 2)
-                    use_def = cols[2].checkbox(f"Propina 10% (${default_tip:,.2f})", key=f"tipdef_ent_{p['id']}")
-                    tip_val = default_tip if use_def else 0.0
-                    tip_val = cols[2].number_input("Otro valor", 0.0, value=tip_val, format="%.2f", key=f"tipcus_ent_{p['id']}")
-                    if cols[2].button("Aplicar propina", key=f"apply_ent_{p['id']}"):
-                        p['propina'] = round(tip_val, 2)
-                        p['total'] = round(p['subtotal'] + p['propina'], 2)
-                        st.rerun()
-                else:
-                    cols[2].markdown(f"_Propina:_ ${p['propina']:,.2f}")
-                st.markdown(f"**Total:** ${p['total']:,.2f}")
-                for pr in p['productos']:
-                    st.markdown(f"- {pr['cantidad']}× {pr['nombre']} ({pr['obs']})")
-                if st.button(f"💰 Marcar pagado #{p['id']}", key=f"adv3_{p['id']}"):
-                    avanzar_estado(p)
-                    st.success(f"Pedido #{p['id']} ahora {p['estado']}")
-                    st.rerun()
-        else:
-            st.write("No hay pedidos entregados.")
+    estados_activos = {
+        "Registrado": "📋 Pedidos Registrados",
+        "En preparación": "🍳 Pedidos En preparación",
+        "Entregado": "📦 Pedidos Entregados"
+    }
+    for estado_key, titulo in estados_activos.items():
+        with st.expander(titulo, expanded=True):
+            lista = [p for p in st.session_state.pedidos if p['estado'] == estado_key]
+            if lista:
+                for p in lista:
+                    header = f"**#{p['id']}** - Mesa {p['mesa']}" if p['tipo'] == 'Mesa' else f"**#{p['id']}** - {p['tipo']}"
+                    cols = st.columns([2, 1, 1]) if estado_key in ["Registrado", "Entregado"] else st.columns([2, 1])
+                    cols[0].markdown(header)
+                    if estado_key in ["Registrado", "Entregado"]:
+                        cols[1].markdown(f"_Subtotal:_ ${p['subtotal']:,.2f}")
+                        tip_col = cols[2]
+                        if p['propina'] == 0.0:
+                            default_tip = round(p['subtotal'] * 0.1, 2)
+                            use_def = tip_col.checkbox(f"Propina 10% (${default_tip:,.2f})", key=f"tip_{estado_key}_{p['id']}")
+                            tip_val = default_tip if use_def else 0.0
+                            tip_val = tip_col.number_input("Otro valor", 0.0, value=tip_val, format="%.2f", key=f"tipcus_{estado_key}_{p['id']}")
+                            if tip_col.button("Aplicar", key=f"apply_{estado_key}_{p['id']}"):
+                                p['propina'] = round(tip_val, 2)
+                                p['total'] = round(p['subtotal'] + p['propina'], 2)
+                                st.rerun()
+                        else:
+                            tip_col.markdown(f"_Propina:_ ${p['propina']:,.2f}")
+                        st.markdown(f"**Total:** ${p['total']:,.2f}")
+                    for pr in p['productos']:
+                        st.markdown(f"- {pr['cantidad']}× {pr['nombre']} ({pr['obs']}){' — $'+format(pr['subtotal'],',.2f') if estado_key in ['Registrado','Entregado'] else ''}")
+                    # Botones de acción
+                    action_col, time_col = st.columns([1, 4])
+                    with action_col:
+                        if p['estado'] in ["Registrado", "En preparación", "Entregado"]:
+                            if st.button(f"➕ Agregar producto #{p['id']}", key=f"addprod_{p['id']}"):
+                                st.session_state[f"edit_order_{p['id']}"] = True
+                        if p['estado'] == "Registrado":
+                            if st.button(f"🗑️ Eliminar producto #{p['id']}", key=f"delprod_{p['id']}"):
+                                st.session_state[f"del_menu_{p['id']}"] = True
+                        if p['estado'] != "Pagado":
+                            if st.button(f"▶️ Avanzar #{p['id']}", key=f"adv_{p['id']}"):
+                                avanzar_estado(p)
+                                st.success(f"Pedido #{p['id']} ahora {p['estado']}")
+                                st.rerun()
+                    with time_col:
+                        time_col.markdown(f"🕒 {p['hora']}")
+                    # Gestionar edición de pedido
+                    if st.session_state.get(f"edit_order_{p['id']}"):
+                        st.markdown("---")
+                        st.write("### Añadir Producto")
+                        prod = st.selectbox("Producto", list(st.session_state.productos.keys()), key=f"sel_{p['id']}")
+                        qty = st.number_input("Cantidad", 1, 20, key=f"qty_{p['id']}")
+                        obs = st.text_input("Observación", key=f"obs_add_{p['id']}")
+                        if st.button(f"Agregar a pedido #{p['id']}", key=f"conf_add_{p['id']}"):
+                            info = st.session_state.productos[prod]
+                            new_item = {"nombre": prod, "cantidad": qty, "obs": obs, "subtotal": qty * info['precio']}
+                            p['productos'].append(new_item)
+                            p['subtotal'] = sum(x['subtotal'] for x in p['productos'])
+                            p['total'] = p['subtotal'] + p['propina']
+                            st.success("Producto agregado.")
+                            st.session_state[f"edit_order_{p['id']}"] = False
+                            st.rerun()
+                    # Gestionar eliminación de productos por cantidad
+                    if st.session_state.get(f"del_menu_{p['id']}"):
+                        st.markdown("---")
+                        st.write("### Eliminar Productos por Cantidad")
+                        options = [f"{idx+1}. {item['nombre']} (Cantidad: {item['cantidad']})" for idx, item in enumerate(p['productos'])]
+                        selected = st.selectbox("Selecciona el producto", options, key=f"sel_del_{p['id']}")
+                        sel_idx = int(selected.split(".")[0]) - 1
+                        prod_to_del = p['productos'][sel_idx]
+                        max_qty = prod_to_del['cantidad']
+                        qty_to_remove = st.number_input("Cantidad a eliminar", min_value=1, max_value=max_qty, value=1, step=1, key=f"qty_del_{p['id']}")
+                        if st.button(f"Eliminar cantidad #{p['id']}", key=f"conf_del_{p['id']}"):
+                            name = prod_to_del['nombre']
+                            price = st.session_state.productos[name]['precio']
+                            prod_to_del['cantidad'] -= qty_to_remove
+                            if prod_to_del['cantidad'] <= 0:
+                                p['productos'].pop(sel_idx)
+                            else:
+                                prod_to_del['subtotal'] = prod_to_del['cantidad'] * price
+                            p['subtotal'] = sum(item['subtotal'] for item in p['productos'])
+                            p['total'] = p['subtotal'] + p['propina']
+                            st.success(f"Se eliminaron {qty_to_remove}× {name}.")
+                            st.session_state[f"del_menu_{p['id']}"] = False
+                            st.rerun()
+            else:
+                st.write(f"No hay pedidos en estado {estado_key}.")
 
 # --- Página: Gestionar Productos ---
 elif menu == "🛠️ Gestionar Productos":
@@ -208,7 +213,6 @@ elif menu == "🛠️ Gestionar Productos":
             st.rerun()
     st.markdown("---")
     # Editar o eliminar producto
-    st.write("**Editar o Eliminar Producto**")
     prod_sel = st.selectbox("Seleccionar producto", list(st.session_state.productos.keys()))
     if prod_sel:
         info = st.session_state.productos[prod_sel]
@@ -254,17 +258,30 @@ elif menu == "🛠️ Gestionar Productos":
             st.success("Categoría eliminada.")
             st.rerun()
     st.markdown("---")
-    st.write("### Productos actuales")
-    for nombre, info in st.session_state.productos.items():
-        st.markdown(f"- **{nombre}** — ${info['precio']:,.2f} ({info['categoria']})")
+    st.write("### Productos actuales por categoría")
+    for cat in categories_list:
+        with st.expander(cat, expanded=False):
+            items = [n for n, v in st.session_state.productos.items() if v['categoria'] == cat]
+            if items:
+                for nombre in items:
+                    info = st.session_state.productos[nombre]
+                    st.markdown(f"- **{nombre}** — ${info['precio']:,.2f}")
+            else:
+                st.write("Sin productos.")
 
 # --- Página: Reportes ---
 elif menu == "📊 Reportes":
     st.subheader("📈 Reportes de ventas")
     pedidos = st.session_state.pedidos
     if pedidos:
+        fechas = [datetime.strptime(p['hora'], "%Y-%m-%d %H:%M:%S").date() for p in pedidos]
+        min_fecha, max_fecha = min(fechas), max(fechas)
+        st.write("#### Filtrar por rango de fechas")
+        desde = st.date_input("Fecha desde", min_fecha)
+        hasta = st.date_input("Fecha hasta", max_fecha)
+        filtrados = [p for p in pedidos if desde <= datetime.strptime(p['hora'], "%Y-%m-%d %H:%M:%S").date() <= hasta]
         detalle = []
-        for pdx in pedidos:
+        for pdx in filtrados:
             for pr in pdx['productos']:
                 detalle.append({
                     'Fecha_Venta': pdx['hora'], 'Tipo': pdx['tipo'], 'Estado': pdx['estado'], 'Id_pedido': pdx['id'],
@@ -273,9 +290,8 @@ elif menu == "📊 Reportes":
         df_detalle = pd.DataFrame(detalle)
         st.write("### Ventas detalladas por producto")
         st.dataframe(df_detalle)
-
         resumen = []
-        for pdx in pedidos:
+        for pdx in filtrados:
             resumen.append({
                 'Fecha_Venta': pdx['hora'], 'Tipo': pdx['tipo'], 'Estado': pdx['estado'], 'Id_pedido': pdx['id'],
                 'Subtotal': pdx['subtotal'], 'Propina': pdx['propina'], 'Total': pdx['total']
@@ -283,7 +299,6 @@ elif menu == "📊 Reportes":
         df_resumen = pd.DataFrame(resumen)
         st.write("### Resumen de ventas por pedido")
         st.dataframe(df_resumen)
-
         buf = io.BytesIO()
         with pd.ExcelWriter(buf, engine='xlsxwriter') as writer:
             df_detalle.to_excel(writer, index=False, sheet_name='Detalle')
@@ -298,7 +313,8 @@ elif menu == "📂 Historial":
     pagados = [p for p in st.session_state.pedidos if p['estado'] == "Pagado"]
     if pagados:
         for p in pagados:
-            st.markdown(f"**#{p['id']}** - {p['tipo']}" + (f" - Mesa {p['mesa']}" if p['tipo']=='Mesa' and p['mesa'] else '') + f" - Total: ${p['total']:,.2f}")
+            header = f"**#{p['id']}** - Mesa {p['mesa']}" if p['tipo']=='Mesa' else f"**#{p['id']}** - {p['tipo']}"
+            st.markdown(f"{header} - Total: ${p['total']:,.2f}")
             for pr in p['productos']:
                 st.markdown(f"- {pr['cantidad']}× {pr['nombre']} ({pr['obs']}) — ${pr['subtotal']:,.2f}")
             st.markdown("---")
@@ -311,7 +327,8 @@ elif menu == "👨‍🍳 Pantalla Cocina":
     en_preparacion = [p for p in st.session_state.pedidos if p['estado'] == "En preparación"]
     if en_preparacion:
         for p in en_preparacion:
-            st.markdown(f"### Pedido #{p['id']} - {p['tipo']}" + (f" - Mesa {p['mesa']}" if p['tipo']=='Mesa' and p['mesa'] else ''))
+            header = f"### Pedido #{p['id']} - Mesa {p['mesa']}" if p['tipo']=='Mesa' else f"### Pedido #{p['id']} - {p['tipo']}"
+            st.markdown(header)
             st.markdown(f"🕒 {p['hora']}")
             for pr in p['productos']:
                 st.markdown(f"- {pr['cantidad']}× **{pr['nombre']}** ({pr['obs']})")
