@@ -6,6 +6,41 @@ import io
 # Configuración de página
 st.set_page_config(page_title="Campi Asados", layout="wide")
 
+st.markdown("""
+    <style>
+    /* Ajustes generales */
+    html, body, [class*="css"]  {
+        font-size: 18px !important;
+    }
+
+    /* Botones más grandes */
+    .stButton>button {
+        font-size: 18px !important;
+        padding: 10px 20px;
+    }
+
+    /* Inputs de número y texto más visibles */
+    input, textarea {
+        font-size: 18px !important;
+    }
+
+    /* Expanders con texto más legible */
+    .st-expanderHeader {
+        font-size: 20px !important;
+    }
+
+    /* Encabezados y subtítulos */
+    h1, h2, h3, h4 {
+        font-size: 24px !important;
+    }
+
+    /* Mejorar legibilidad de mensajes de éxito/error/info */
+    .stAlert {
+        font-size: 18px !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 # --- Encabezado ---
 st.image("logo_campi_asados.jpg", width=300)
 
