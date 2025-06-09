@@ -1,40 +1,77 @@
+# Sección 1
 import streamlit as st
 from datetime import datetime, date
 import pandas as pd
 import io
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+import json
+
+# --- Conexión a Google Sheets ---
+@st.cache_resource
+def conectar_hoja():
+    scope = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds_dict = json.loads(st.secrets["GOOGLE_SHEETS_CREDENTIALS"])
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    cliente = gspread.authorize(creds)
+    hoja = cliente.open("CampiAsadosDB")
+    return hoja
+
+# Función para guardar un pedido en Google Sheets
+def guardar_pedido_sheets(pedido):
+    try:
+        hoja = conectar_hoja()
+        hoja_pedidos = hoja.worksheet("Pedidos")
+        hoja_items = hoja.worksheet("Items")
+        # Agregar fila al sheet de Pedidos
+        hoja_pedidos.append_row([
+            pedido["id"],
+            pedido["tipo"],
+            pedido["mesa"] or "",
+            pedido["hora"],
+            pedido["estado"],
+            pedido["subtotal"],
+            pedido["propina"],
+            pedido["total"]
+        ])
+        # Agregar filas al sheet de Items
+        for item in pedido["productos"]:
+            hoja_items.append_row([
+                pedido["id"],
+                item["nombre"],
+                item["cantidad"],
+                item["obs"],
+                item["subtotal"]
+            ])
+    except Exception as e:
+        st.error(f"Error al guardar en Google Sheets: {e}")
 
 # Configuración de página
 st.set_page_config(page_title="Campi Asados", layout="wide")
 
+# Estilos y ajustes para móvil
 st.markdown("""
     <style>
     /* Ajustes generales */
     html, body, [class*="css"]  {
         font-size: 18px !important;
     }
-
-    /* Botones más grandes */
     .stButton>button {
         font-size: 18px !important;
         padding: 10px 20px;
     }
-
-    /* Inputs de número y texto más visibles */
     input, textarea {
         font-size: 18px !important;
     }
-
-    /* Expanders con texto más legible */
     .st-expanderHeader {
         font-size: 20px !important;
     }
-
-    /* Encabezados y subtítulos */
     h1, h2, h3, h4 {
         font-size: 24px !important;
     }
-
-    /* Mejorar legibilidad de mensajes de éxito/error/info */
     .stAlert {
         font-size: 18px !important;
     }
@@ -44,12 +81,40 @@ st.markdown("""
 # --- Encabezado ---
 st.image("logo_campi_asados.jpg", width=300)
 
-# --- Categorías definidas ---
-categories_list = [
-    "Carnes Especiales", "Carnes", "Chuzos", "Arepas", "Hamburguesas",
-    "Perros", "Otros Platos", "Bebidas", "Jugos", "Limonadas"
-]
-
+# --- Definición de categorías dinámicas ---
+# Cargar Productos y Categorías desde Google Sheets (si existen)
+try:
+    hoja = conectar_hoja()
+    prod_sheet = hoja.worksheet("Productos")
+    filas_prod = prod_sheet.get_all_records()
+    # Construir diccionario de productos
+    st.session_state.productos = {
+        fila["Nombre"]: {"precio": fila["Precio"], "descripcion": fila["Descripción"], "categoria": fila.get("Categoría")} 
+        for fila in filas_prod
+    }
+    # Lista de categorías única y ordenada
+    categories_list = sorted({fila.get("Categoría") for fila in filas_prod if fila.get("Categoría")})
+except Exception:
+    # Fallback estático
+    categories_list = [
+        "Carnes Especiales", "Carnes", "Chuzos", "Arepas", "Hamburguesas",
+        "Perros", "Otros Platos", "Bebidas", "Jugos", "Limonadas"
+    ]
+    if "productos" not in st.session_state:
+        st.session_state.productos = {
+            "punta de Anca con Champiñones": {"precio":20000, "descripcion":"Carne Asada, Papitas, arepa con lonchita, Ensalada", "categoria":"Carnes Especiales"},
+            "Solomito Especial": {"precio":50000, "descripcion":"Carne Asada, Papitas, arepa con lonchita, Ensalada", "categoria":"Carnes Especiales"},
+            "Punta de Anca": {"precio":15000, "descripcion":"Carne, papas, arepa", "categoria":"Carnes"},
+            "Chuzo de Pollo": {"precio":10000, "descripcion":"Chuzo, papas, arepa, Ensalada", "categoria":"Chuzos"},
+            "Arepa con Carne": {"precio":10000, "descripcion":"Carne desmechada y queso", "categoria":"Arepas"},
+            "Hamburguesa Especial": {"precio":10000, "descripcion":"Con todos los Juguetes", "categoria":"Hamburguesas"},
+            "Perro Grande Especial": {"precio":10000, "descripcion":"Ripio, Queso, Ensalada", "categoria":"Perros"},
+            "Picada para dos": {"precio":10000, "descripcion":"Picada de Chicharron, Papas, Morcilla, Carne, Maduritos", "categoria":"Otros Platos"},
+            "Cerveza": {"precio":5000, "descripcion":"Cerveza Fria", "categoria":"Bebidas"},
+            "Jugo de Mora": {"precio":10000, "descripcion":"Jugo Natural de Mora", "categoria":"Jugos"},
+            "Limonada de Mango": {"precio":5000, "descripcion":"Limonada de Mango", "categoria":"Limonadas"},
+            "Limonada de Coco": {"precio":5000, "descripcion":"Limonada de Coco", "categoria":"Limonadas"}
+        }
 # --- Estado de sesión ---
 if "pedidos" not in st.session_state:
     st.session_state.pedidos = []
@@ -71,23 +136,22 @@ if "productos" not in st.session_state:
 if "inputs_reset" not in st.session_state:
     st.session_state.inputs_reset = False
 
+# Sección 2
+
 # --- Menú principal ---
 opciones_menu = ["📋 Tomar Pedido", "🛠️ Gestionar Productos", "📊 Reportes", "📂 Historial", "👨‍🍳 Pantalla Cocina"]
 menu = st.sidebar.radio("Menú", opciones_menu)
 
 # --- Funciones auxiliares ---
-
 def avanzar_estado(pedido):
     estados = ["Registrado", "En preparación", "Entregado", "Pagado"]
     idx = estados.index(pedido['estado'])
     if idx < len(estados) - 1:
         pedido['estado'] = estados[idx + 1]
 
-
 def mesa_ocupada(mesa):
     return any(p['mesa'] == mesa and p['estado'] in ["Registrado", "En preparación", "Entregado"]
                for p in st.session_state.pedidos)
-
 
 def agregar_pedido(tipo, mesa, productos):
     subtotal = sum(item['subtotal'] for item in productos)
@@ -103,9 +167,12 @@ def agregar_pedido(tipo, mesa, productos):
         "total": subtotal
     }
     st.session_state.pedidos.append(pedido)
+    # Guardar en Google Sheets
+    guardar_pedido_sheets(pedido)
 
-# --- Página: Tomar Pedido ---
+# Sección 3
 if menu == "📋 Tomar Pedido":
+    # --- Página: Tomar Pedido ---
     st.subheader("📝 Nuevo Pedido")
     tipo = st.selectbox("Tipo de pedido", ["Mesa", "Para llevar", "Domicilio"])
     mesa = st.selectbox("Número de mesa", [str(i) for i in range(1, 21)]) if tipo == "Mesa" else None
@@ -143,12 +210,10 @@ if menu == "📋 Tomar Pedido":
             st.error("⚠️ Selecciona al menos un producto.")
     st.session_state.inputs_reset = False
 
-    # -- Pedidos Activos --
+    # --- Pedidos Activos ---
     st.markdown("---")
     estados_activos = {
-        "Registrado": "📋 Pedidos Registrados",
-        "En preparación": "🍳 Pedidos En preparación",
-        "Entregado": "📦 Pedidos Entregados"
+        "Registrado": "📋 Pedidos Registrados", "En preparación": "🍳 Pedidos En preparación",  "Entregado": "📦 Pedidos Entregados"
     }
     for estado_key, titulo in estados_activos.items():
         with st.expander(titulo, expanded=True):
@@ -174,8 +239,8 @@ if menu == "📋 Tomar Pedido":
                             tip_col.markdown(f"_Propina:_ ${p['propina']:,.2f}")
                         st.markdown(f"**Total:** ${p['total']:,.2f}")
                     for pr in p['productos']:
-                        st.markdown(f"- {pr['cantidad']}× {pr['nombre']} ({pr['obs']}){' — $'+format(pr['subtotal'],',.2f') if estado_key in ['Registrado','Entregado'] else ''}")
-                    # Botones de acción
+                        suffix = f" — ${pr['subtotal']:,.2f}" if estado_key in ['Registrado','Entregado'] else ''
+                        st.markdown(f"- {pr['cantidad']}× {pr['nombre']} ({pr['obs']}){suffix}")
                     action_col, time_col = st.columns([1, 4])
                     with action_col:
                         if p['estado'] in ["Registrado", "En preparación", "Entregado"]:
@@ -191,7 +256,6 @@ if menu == "📋 Tomar Pedido":
                                 st.rerun()
                     with time_col:
                         time_col.markdown(f"🕒 {p['hora']}")
-                    # Gestionar edición de pedido
                     if st.session_state.get(f"edit_order_{p['id']}"):
                         st.markdown("---")
                         st.write("### Añadir Producto")
@@ -207,7 +271,6 @@ if menu == "📋 Tomar Pedido":
                             st.success("Producto agregado.")
                             st.session_state[f"edit_order_{p['id']}"] = False
                             st.rerun()
-                    # Gestionar eliminación de productos por cantidad
                     if st.session_state.get(f"del_menu_{p['id']}"):
                         st.markdown("---")
                         st.write("### Eliminar Productos por Cantidad")
@@ -285,7 +348,7 @@ elif menu == "🛠️ Gestionar Productos":
                     prod["categoria"] = rename_cat
             st.success("Categoría actualizada.")
             st.rerun()
-        if st.button("Eliminar Categoría"):
+        if st.button("EliminarCategoría"):
             categories_list.remove(cat_sel)
             for prod in st.session_state.productos.values():
                 if prod["categoria"] == cat_sel:
@@ -304,6 +367,7 @@ elif menu == "🛠️ Gestionar Productos":
             else:
                 st.write("Sin productos.")
 
+# Sección 4
 # --- Página: Reportes ---
 elif menu == "📊 Reportes":
     st.subheader("📈 Reportes de ventas")
