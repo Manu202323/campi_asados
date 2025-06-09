@@ -22,6 +22,7 @@ def conectar_hoja():
 
 # Función para guardar un pedido en Google Sheets
 def guardar_pedido_sheets(pedido):
+    """Guarda el pedido en Google Sheets y retorna la fila guardada."""
     try:
         hoja = conectar_hoja()
         hoja_pedidos = hoja.worksheet("Pedidos")
@@ -46,8 +47,12 @@ def guardar_pedido_sheets(pedido):
                 item["obs"],
                 item["subtotal"]
             ])
+        # Obtener y retornar la última fila ingresada
+        records = hoja_pedidos.get_all_records()
+        return records[-1] if records else None
     except Exception as e:
         st.error(f"Error al guardar en Google Sheets: {e}")
+        return None
 
 # Configuración de página
 st.set_page_config(page_title="Campi Asados", layout="wide")
@@ -116,6 +121,22 @@ except Exception:
             "Limonada de Coco": {"precio":5000, "descripcion":"Limonada de Coco", "categoria":"Limonadas"}
         }
 # --- Estado de sesión ---
+
+# --- Prueba de conexión a Google Sheets ---
+if st.sidebar.button("🧪 Probar conexión Sheets"):
+    try:
+        hoja_test = conectar_hoja()
+        pedidos_sheet = hoja_test.worksheet("Pedidos")
+        items_sheet = hoja_test.worksheet("Items")
+        st.sidebar.success("✅ Conexión exitosa a CampiAsadosDB")
+        df_pedidos = pd.DataFrame(pedidos_sheet.get_all_records())
+        df_items   = pd.DataFrame(items_sheet.get_all_records())
+        st.sidebar.write("**Pedidos (primeras filas):**")
+        st.sidebar.dataframe(df_pedidos.head())
+        st.sidebar.write("**Items (primeras filas):**")
+        st.sidebar.dataframe(df_items.head())
+    except Exception as e:
+        st.sidebar.error(f"Error al conectar: {e}")
 if "pedidos" not in st.session_state:
     st.session_state.pedidos = []
 if "productos" not in st.session_state:
@@ -154,6 +175,25 @@ def mesa_ocupada(mesa):
                for p in st.session_state.pedidos)
 
 def agregar_pedido(tipo, mesa, productos):
+    subtotal = sum(item['subtotal'] for item in productos)
+    pedido = {
+        "id": len(st.session_state.pedidos) + 1,
+        "tipo": tipo,
+        "mesa": mesa if tipo == "Mesa" else None,
+        "productos": productos,
+        "estado": "Registrado",
+        "hora": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "subtotal": subtotal,
+        "propina": 0.0,
+        "total": subtotal
+    }
+    st.session_state.pedidos.append(pedido)
+    # Guardar en Google Sheets y mostrar confirmación
+    fila_sheet = guardar_pedido_sheets(pedido)
+    if fila_sheet:
+        st.success(f"✅ Pedido guardado en Sheets: {fila_sheet}")
+    else:
+        st.warning("⚠️ El pedido se registró localmente, pero hubo problema al almacenar en Sheets.")
     subtotal = sum(item['subtotal'] for item in productos)
     pedido = {
         "id": len(st.session_state.pedidos) + 1,
